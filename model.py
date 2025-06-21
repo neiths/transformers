@@ -46,7 +46,7 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-class LayerNormlization(nn.Module):
+class LayerNormalization(nn.Module):
     def __init__(self, eps: float = 1e-6) -> None:
         super().__init__()
         self.eps = eps
@@ -127,25 +127,37 @@ class MultiHeadAttention(nn.Module):
 
 
 if __name__ == "__main__":
-    d_model = 512
-    vocab_size = 10000
-    seq_len = 100
+    # === Model Setup ===
+    d_model = 8  # Example embedding size (small for easy testing)
+    vocab_size = 10  # Example vocab size
+    seq_len = 5  # Sequence length
+    batch_size = 10  # Number of sequences in a batch
 
     input_embedding = InputEmbedding(d_model, vocab_size)
     positional_encoding = PositionalEncoding(d_model, seq_len, dropout=0.1)
-    layer_norm = LayerNormlization()
-    ff_block = FeedForwardBlock(d_model, d_ff=2048, dropout=0.1)
-    multi_head_attention = MultiHeadAttention(d_model, h=8, dropout=0.1)
+    layer_norm = LayerNormalization()  # Correct the class name spelling
+    ff_block = FeedForwardBlock(d_model, d_ff=32, dropout=0.1)  # Use small d_ff for test
+    multi_head_attention = MultiHeadAttention(d_model, h=2, dropout=0.1)  # Use 2 heads for easy checking
 
-    #  Example usage
-    x = torch.randint(0, vocab_size, (10, seq_len))  # Batch of 10 sequences
+    # === Create Input ===
+    x = torch.randint(0, vocab_size, (batch_size, seq_len))  # Random token indices
+    print(f"Input token indices:\n{x}\nShape: {x.shape}\n")
+
+    # === Input Embedding + Positional Encoding ===
     embedded_x = input_embedding(x)
+    print(f"Embedded x shape: {embedded_x.shape}")  # Should be (batch_size, seq_len, d_model)
+
     encoded_x = positional_encoding(embedded_x)
+    print(f"Positional Encoded x shape: {encoded_x.shape}")
 
-    # print(encoded_x.shape)  # Should be (10, seq_len, d_model)
-
+    # === Layer Normalization ===
     normalized_x = layer_norm(encoded_x)
+    print(f"Layer Normalized x shape: {normalized_x.shape}")
 
-    # print(ff_block(normalized_x))
+    # === Feed Forward Block ===
+    ff_output = ff_block(normalized_x)
+    print(f"Feed Forward output shape: {ff_output.shape}")
 
-    print(multi_head_attention(normalized_x, normalized_x, normalized_x, None))  # Should be (10, seq_len, d_model)
+    # === Multi-Head Attention ===
+    attention_output = multi_head_attention(normalized_x, normalized_x, normalized_x, mask=None)
+    print(f"Multi-Head Attention output shape: {attention_output.shape}")
