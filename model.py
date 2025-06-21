@@ -59,6 +59,24 @@ class LayerNormlization(nn.Module):
         return self.alpha * (x - mean) / (std + self.eps) + self.bias
 
 
+class FeedForwardBlock(nn.Module):
+
+    def __init__(self, d_model: int, d_ff: int, dropout: float) -> None:
+        super().__init__()
+        self.linear1 = nn.Linear(d_model, d_ff)  # w1 and b1
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(d_ff, d_model)  # w2 and b2
+
+    def forward(self, x):
+        #  (Batch, Seq_len, d_model) -> (Batch, Seq_len, d_ff) --> (Batch, Seq_len, d_model)
+        x = self.linear1(x)
+        x = torch.relu(x)
+        x = self.dropout(x)
+        x = self.linear2(x)
+        return x
+
+
+
 if __name__ == "__main__":
     d_model = 512
     vocab_size = 10000
@@ -72,13 +90,14 @@ if __name__ == "__main__":
     x = torch.randint(0, vocab_size, (10, seq_len))  # Batch of 10 sequences
     embedded_x = input_embedding(x)
     encoded_x = positional_encoding(embedded_x)
+    ff_block = FeedForwardBlock(d_model, d_ff=2048, dropout=0.1)
 
     print(encoded_x.shape)  # Should be (10, seq_len, d_model)
 
     normalized_x = layer_norm(encoded_x)
 
-    print(encoded_x[0])
+    print(ff_block(normalized_x))
 
-    print(normalized_x[0])
+
 
 
