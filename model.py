@@ -188,7 +188,8 @@ class DecoderBlock(nn.Module):
 
     def forward(self, x, encoder_output, src_mask, tgt_mask):
         x = self.residual_connections[0](x, lambda x: self.self_attention_block(x, x, x, tgt_mask))
-        x = self.residual_connections[1](x, lambda x: self.cross_attention_block(x, encoder_output, encoder_output, src_mask))
+        x = self.residual_connections[1](x, lambda x: self.cross_attention_block(x, encoder_output, encoder_output,
+                                                                                 src_mask))
         x = self.residual_connections[2](x, self.feed_forward_block)
         return x
 
@@ -252,7 +253,63 @@ class Transformer(nn.Module):
         return self.projection_layer(x)
 
 
+def build_transformer(
+        src_vocab_size: int,
+        tgt_vocab_size: int,
+        src_seq_len: int,
+        tgt_seq_len: int,
+        d_model: int = 512,
+        n_layers: int = 6,
+        n_heads: int = 8,
+        dropout: float = 0.1,
+        d_ff: int = 2048
+) -> Transformer:
+    #  Create the embedding layers
+    src_embed = InputEmbedding(d_model, src_vocab_size)
+    tgt_embed = InputEmbedding(d_model, tgt_vocab_size)
 
+    #  Create the positional encoding layers
+    src_pos = PositionalEncoding(d_model, src_seq_len, dropout)
+    tgt_pos = PositionalEncoding(d_model, tgt_seq_len, dropout)
+
+    #  Create the encoder and decoder layers
+    encoder_layers = nn.ModuleList([
+        EncoderBlock(
+            MultiHeadAttention(d_model, n_heads, dropout),
+            FeedForwardBlock(d_model, d_ff, dropout),
+            dropout
+        ) for _ in range(n_layers)
+    ])
+
+    decoder_layers = nn.ModuleList([
+        DecoderBlock(
+            MultiHeadAttention(d_model, n_heads, dropout),
+            MultiHeadAttention(d_model, n_heads, dropout),
+            FeedForwardBlock(d_model, d_ff, dropout),
+            dropout
+        ) for _ in range(n_layers)
+    ])
+
+    encoder = Encoder(encoder_layers)
+    decoder = Decoder(decoder_layers)
+
+    projection_layer = ProjectionLayer(d_model, tgt_vocab_size)
+
+    transformer = Transformer(
+        encoder,
+        decoder,
+        src_embed,
+        tgt_embed,
+        src_pos,
+        tgt_pos,
+        projection_layer
+    )
+
+    for p in transformer.parameters():
+        if p.dim() > 1:
+            nn.init.xavier_uniform_(p)
+
+    return transformer
 
 
 if __name__ == "__main__":
@@ -261,37 +318,3 @@ if __name__ == "__main__":
     vocab_size = 10  # Example vocab size
     seq_len = 5  # Sequence length
     batch_size = 10  # Number of sequences in a batch
-
-    input_embedding = InputEmbedding(d_model, vocab_size)
-    positional_encoding = PositionalEncoding(d_model, seq_len, dropout=0.1)
-    layer_norm = LayerNormalization()  # Correct the class name spelling
-    ff_block = FeedForwardBlock(d_model, d_ff=32, dropout=0.1)  # Use small d_ff for test
-    multi_head_attention = MultiHeadAttention(d_model, h=2, dropout=0.1)  # Use 2 heads for easy checking
-
-    # === Create Input ===
-    x = torch.randint(0, vocab_size, (batch_size, seq_len))  # Random token indices
-    print(f"Input token indices:\n{x}\nShape: {x.shape}\n")
-
-    # === Input Embedding + Positional Encoding ===
-    embedded_x = input_embedding(x)
-    print(f"Embedded x shape: {embedded_x.shape} \n")  # Should be (batch_size, seq_len, d_model)
-    print(embedded_x)
-
-    encoded_x = positional_encoding(embedded_x)
-    print(f"Positional Encoded x shape: {encoded_x.shape} \n")
-    print(encoded_x)
-
-    # === Layer Normalization ===
-    normalized_x = layer_norm(encoded_x)
-    print(f"Layer Normalized x shape: {normalized_x.shape} \n")
-    print(normalized_x)
-
-    # === Feed Forward Block ===
-    ff_output = ff_block(normalized_x)
-    print(f"Feed Forward output shape: {ff_output.shape} \n")
-    print(ff_output)
-
-    # === Multi-Head Attention ===
-    attention_output = multi_head_attention(normalized_x, normalized_x, normalized_x, mask=None)
-    print(f"Multi-Head Attention output shape: {attention_output.shape} \n")
-    print(attention_output)
