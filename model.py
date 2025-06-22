@@ -186,19 +186,24 @@ if __name__ == "__main__":
 
     # === Input Embedding + Positional Encoding ===
     embedded_x = input_embedding(x)
-    print(f"Embedded x shape: {embedded_x.shape}")  # Should be (batch_size, seq_len, d_model)
+    print(f"Embedded x shape: {embedded_x.shape} \n")  # Should be (batch_size, seq_len, d_model)
+    print(embedded_x)
 
     encoded_x = positional_encoding(embedded_x)
-    print(f"Positional Encoded x shape: {encoded_x.shape}")
+    print(f"Positional Encoded x shape: {encoded_x.shape} \n")
+    print(encoded_x)
 
     # === Layer Normalization ===
     normalized_x = layer_norm(encoded_x)
-    print(f"Layer Normalized x shape: {normalized_x.shape}")
+    print(f"Layer Normalized x shape: {normalized_x.shape} \n")
+    print(normalized_x)
 
     # === Feed Forward Block ===
     ff_output = ff_block(normalized_x)
-    print(f"Feed Forward output shape: {ff_output.shape}")
+    print(f"Feed Forward output shape: {ff_output.shape} \n")
+    print(ff_output)
 
     # === Multi-Head Attention ===
     attention_output = multi_head_attention(normalized_x, normalized_x, normalized_x, mask=None)
-    print(f"Multi-Head Attention output shape: {attention_output.shape}")
+    print(f"Multi-Head Attention output shape: {attention_output.shape} \n")
+    print(attention_output)
