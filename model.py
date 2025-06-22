@@ -313,8 +313,17 @@ def build_transformer(
 
 
 if __name__ == "__main__":
-    # === Model Setup ===
-    d_model = 8  # Example embedding size (small for easy testing)
-    vocab_size = 10  # Example vocab size
-    seq_len = 5  # Sequence length
-    batch_size = 10  # Number of sequences in a batch
+    # Example usage
+    transformer = build_transformer(
+        src_vocab_size=10000,
+        tgt_vocab_size=10000,
+        src_seq_len=50,
+        tgt_seq_len=50,
+        d_model=512,
+        n_layers=6,
+        n_heads=8,
+        dropout=0.1,
+        d_ff=2048
+    )
+    print(transformer)
+    # You can now use this transformer model for training or inference
