@@ -1,3 +1,9 @@
+# Transformer from Scratch
+
+## It takes about 23 minutes for one epoch on T4 GPU with batch size 24
+![img.png](assets/img.png)
+
+## Model 
 ```bash
 transformer = build_transformer(
     src_vocab_size=10000,
