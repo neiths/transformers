@@ -40,7 +40,7 @@ class BilingualDataset(Dataset):
         dec_input_tokens = self.tokenizer_tgt.encode(tgt_text).ids
 
         enc_num_padding_tokens = self.seq_len - len(enc_input_tokens) - 2
-        dec_num_padding_tokens = self.seq_len - len(dec_input_tokens) - 2
+        dec_num_padding_tokens = self.seq_len - len(dec_input_tokens) - 1
 
         if enc_num_padding_tokens < 0 or dec_num_padding_tokens < 0:
             raise ValueError(
@@ -67,7 +67,8 @@ class BilingualDataset(Dataset):
                 torch.tensor(
                     [self.pad_token] * dec_num_padding_tokens, dtype=torch.int64
                 )
-            ]
+            ],
+            dim = 0
         )
 
         # Add EOS to label

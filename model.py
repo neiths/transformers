@@ -47,13 +47,14 @@ class PositionalEncoding(nn.Module):
 
 
 class LayerNormalization(nn.Module):
-    def __init__(self, eps: float = 1e-6) -> None:
+    def __init__(self, features: int, eps: float = 1e-6) -> None:
         super().__init__()
         self.eps = eps
-        self.alpha = nn.Parameter(torch.ones(1))  # Multiplied
-        self.bias = nn.Parameter(torch.zeros(1))  # Added
+        self.alpha = nn.Parameter(torch.ones(features))  # Multiplied
+        self.bias = nn.Parameter(torch.zeros(features))  # Added
 
     def forward(self, x):
+        x = x.float()
         mean = x.mean(dim=-1, keepdim=True)
         std = x.std(dim=-1, keepdim=True)
         return self.alpha * (x - mean) / (std + self.eps) + self.bias
@@ -80,21 +81,21 @@ class MultiHeadAttention(nn.Module):
 
     def __init__(self, d_model: int, h: int, dropout: float) -> None:
         super().__init__()
-        self.attention_scores = None
         self.d_model = d_model
         self.h = h
-        self.dropout = nn.Dropout(dropout)
 
         assert d_model % h == 0, "d_model must be divisible by h"
+
+        self.dropout = nn.Dropout(dropout)
         self.d_k = d_model // h
-        self.w_q = nn.Linear(d_model, d_model)  # Wq
-        self.w_k = nn.Linear(d_model, d_model)  # Wk
-        self.w_v = nn.Linear(d_model, d_model)  # Wv
-        self.w_o = nn.Linear(d_model, d_model)  # Wo
+        self.w_q = nn.Linear(d_model, d_model, bias=False)  # Wq
+        self.w_k = nn.Linear(d_model, d_model, bias=False)  # Wk
+        self.w_v = nn.Linear(d_model, d_model, bias=False)  # Wv
+        self.w_o = nn.Linear(d_model, d_model, bias=False)  # Wo
 
     @staticmethod
     def attention(query, key, value, mask, dropout: nn.Dropout):
-        d_k = query.size(-1)
+        d_k = query.shape[-1]
 
         attention_scores = (query @ key.transpose(-2, -1)) / math.sqrt(d_k)
 
@@ -128,10 +129,10 @@ class MultiHeadAttention(nn.Module):
 
 class ResidualConnection(nn.Module):
 
-    def __init__(self, dropout: float):
+    def __init__(self, features: int, dropout: float):
         super().__init__()
         self.dropout = nn.Dropout(dropout)
-        self.norm = LayerNormalization()
+        self.norm = LayerNormalization(features)
 
     def forward(self, x, sublayer):
         return x + self.dropout(sublayer(self.norm(x)))
@@ -139,14 +140,19 @@ class ResidualConnection(nn.Module):
 
 class EncoderBlock(nn.Module):
 
-    def __init__(self, self_attention_block: MultiHeadAttention, feed_forward_block: FeedForwardBlock, dropout: float):
+    def __init__(
+            self,
+            features: int,
+            self_attention_block: MultiHeadAttention,
+            feed_forward_block: FeedForwardBlock,
+            dropout: float
+    ):
         super().__init__()
         self.self_attention_block = self_attention_block
         self.feed_forward_block = feed_forward_block
-        self.dropout = nn.Dropout(dropout)
         self.residual_connections = nn.ModuleList([
-            ResidualConnection(dropout),
-            ResidualConnection(dropout)
+            ResidualConnection(features, dropout),
+            ResidualConnection(features, dropout)
         ])
 
     def forward(self, x, src_mask):
@@ -157,10 +163,10 @@ class EncoderBlock(nn.Module):
 
 class Encoder(nn.Module):
 
-    def __init__(self, layers: nn.ModuleList) -> None:
+    def __init__(self, features: int, layers: nn.ModuleList) -> None:
         super().__init__()
         self.layers = layers
-        self.norm = LayerNormalization()
+        self.norm = LayerNormalization(features)
 
     def forward(self, x, src_mask):
         for layer in self.layers:
@@ -172,6 +178,7 @@ class DecoderBlock(nn.Module):
 
     def __init__(
             self,
+            features: int,
             self_attention_block: MultiHeadAttention,
             cross_attention_block: MultiHeadAttention,
             feed_forward_block: FeedForwardBlock,
@@ -183,7 +190,7 @@ class DecoderBlock(nn.Module):
         self.feed_forward_block = feed_forward_block
         self.dropout = nn.Dropout(dropout)
         self.residual_connections = nn.ModuleList([
-            ResidualConnection(dropout) for _ in range(3)
+            ResidualConnection(features, dropout) for _ in range(3)
         ])
 
     def forward(self, x, encoder_output, src_mask, tgt_mask):
@@ -196,10 +203,10 @@ class DecoderBlock(nn.Module):
 
 class Decoder(nn.Module):
 
-    def __init__(self, layers: nn.ModuleList) -> None:
+    def __init__(self, features: int, layers: nn.ModuleList) -> None:
         super().__init__()
         self.layers = layers
-        self.norm = LayerNormalization()
+        self.norm = LayerNormalization(features)
 
     def forward(self, x, encoder_output, src_mask, tgt_mask):
         for layer in self.layers:
@@ -275,6 +282,7 @@ def build_transformer(
     #  Create the encoder and decoder layers
     encoder_layers = nn.ModuleList([
         EncoderBlock(
+            d_model,
             MultiHeadAttention(d_model, n_heads, dropout),
             FeedForwardBlock(d_model, d_ff, dropout),
             dropout
@@ -283,6 +291,7 @@ def build_transformer(
 
     decoder_layers = nn.ModuleList([
         DecoderBlock(
+            d_model,
             MultiHeadAttention(d_model, n_heads, dropout),
             MultiHeadAttention(d_model, n_heads, dropout),
             FeedForwardBlock(d_model, d_ff, dropout),
@@ -290,8 +299,8 @@ def build_transformer(
         ) for _ in range(n_layers)
     ])
 
-    encoder = Encoder(encoder_layers)
-    decoder = Decoder(decoder_layers)
+    encoder = Encoder(d_model, encoder_layers)
+    decoder = Decoder(d_model, decoder_layers)
 
     projection_layer = ProjectionLayer(d_model, tgt_vocab_size)
 

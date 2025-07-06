@@ -5,7 +5,6 @@ from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
 from tokenizers.trainers import WordLevelTrainer
 from tokenizers.pre_tokenizers import Whitespace
-from torch.utils.tensorboard import SummaryWriter
 from pathlib import Path
 
 import torch
@@ -25,7 +24,7 @@ def get_all_sentences(ds, lang):
 
 def get_or_build_tokenizer(config, ds, lang):
 
-    tokenizer_path = Path(config['tokenizer_file'].format(lang=lang))
+    tokenizer_path = Path(config['tokenizer_file'].format(lang))
 
     if not tokenizer_path.exists():
         tokenizer: Tokenizer = Tokenizer(WordLevel(unk_token='[UNK]'))
@@ -50,7 +49,7 @@ def get_or_build_tokenizer(config, ds, lang):
 def get_ds(config):
     ds_raw = load_dataset(
         'opus_books',
-        f"{config["lang_src"]}-{config["lang_tgt"]}",
+        f"{config['lang_src']}-{config['lang_tgt']}",
         split='train',
     )
 
@@ -68,18 +67,18 @@ def get_ds(config):
         train_ds_raw,
         tokenizer_src,
         tokenizer_tgt,
-        config['seq_len'],
         config['lang_src'],
-        config['lang_tgt']
+        config['lang_tgt'],
+        config['seq_len'],
     )
 
     val_ds = BilingualDataset(
         val_ds_raw,
         tokenizer_src,
         tokenizer_tgt,
-        config['seq_len'],
         config['lang_src'],
-        config['lang_tgt']
+        config['lang_tgt'],
+        config['seq_len'],
     )
 
     max_len_src = 0
@@ -115,8 +114,20 @@ def get_model(config, vocab_size_src, vocab_size_tgt):
         vocab_size_tgt,
         config['seq_len'],
         config['seq_len'],
-        config['d_model'],
+        d_model=config['d_model'],
     )
+
+    # transformer = build_transformer(
+    #     src_vocab_size=10000,
+    #     tgt_vocab_size=10000,
+    #     src_seq_len=50,
+    #     tgt_seq_len=50,
+    #     d_model=512,
+    #     n_layers=6,
+    #     n_heads=8,
+    #     dropout=0.1,
+    #     d_ff=2048
+    # )
 
     return model
 
@@ -171,20 +182,23 @@ def train_model(config):
             decoder_mask = batch['decoder_mask'].to(device)
 
             # run the tensor through the model
-            encoder_output = model.encoder(encoder_input, encoder_mask) # (B, seq_len, d_model)
-            decoder_output = model.decoder(
+            encoder_output = model.encode(encoder_input, encoder_mask) # (B, seq_len, d_model)
+            decoder_output = model.decode(
                 encoder_output,
                 encoder_mask,
                 decoder_input,
                 decoder_mask
             ) # (B, seq_len, d_model)
 
-            proj_output = model.proj(decoder_output) # (B, seq_len, vocab_size_tgt)
+            proj_output = model.project(decoder_output) # (B, seq_len, vocab_size_tgt)
 
             label = batch['label'].to(device) # (B, seq_len)
 
             # (B, seq_len, vocab_size_tgt) -> (B * seq_len, vocab_size_tgt)
-            loss = loss_fn(proj_output.view(-1, tokenizer_tgt.get_vocab_size()))
+            loss = loss_fn(
+                proj_output.view(-1, tokenizer_tgt.get_vocab_size()),
+                label.view(-1)
+            )
 
             batch_iterator.set_postfix({f"loss": f"{loss.item():6.3f}"})
 
@@ -212,10 +226,10 @@ def train_model(config):
             model_filename,
         )
 
-    if __name__ == "__main__":
-        warnings.filterwarnings("ignore")
-        config = get_config()
-        train_model(config)
+if __name__ == "__main__":
+    warnings.filterwarnings("ignore")
+    config = get_config()
+    train_model(config)
 
 
 
