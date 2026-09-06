@@ -1,5 +1,7 @@
-torch~=2.7.1
-datasets~=3.6.0
-tokenizers~=0.21.2
-tqdm~=4.67.1
-tensorboard
+torch>=2.0.0
+datasets>=2.14.0
+tokenizers>=0.14.0
+tqdm>=4.65.0
+tensorboard>=2.14.0
+torchmetrics>=1.0.0
+pytest>=7.0.0
