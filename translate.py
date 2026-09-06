@@ -121,16 +121,17 @@ def translate(sentence: str, model=None, tokenizer_src=None, tokenizer_tgt=None,
         source_tokens = source_tokens[:seq_len - 2]
         num_padding_tokens = 0
 
-    encoder_input = torch.cat(
+    encoder_input_cpu = torch.cat(
         [
             sos_token,
             torch.tensor(source_tokens, dtype=torch.int64),
             eos_token,
             torch.tensor([pad_token] * num_padding_tokens, dtype=torch.int64)
         ]
-    ).unsqueeze(0).to(device)  # (1, seq_len)
+    )
 
-    encoder_mask = (encoder_input != pad_token).unsqueeze(0).unsqueeze(0).int().to(device)  # (1, 1, 1, seq_len)
+    encoder_mask = (encoder_input_cpu != pad_token).unsqueeze(0).unsqueeze(0).int().to(device)  # (1, 1, 1, seq_len)
+    encoder_input = encoder_input_cpu.unsqueeze(0).to(device)  # (1, seq_len)
 
     with torch.no_grad():
         out = greedy_decode(model, encoder_input, encoder_mask, tokenizer_src, tokenizer_tgt, seq_len, device)

@@ -1,3 +1,4 @@
+import argparse
 import os
 from pathlib import Path
 import warnings
@@ -33,6 +34,7 @@ def get_or_build_tokenizer(config, ds, lang):
     tokenizer_path = Path(config['tokenizer_file'].format(lang))
 
     if not tokenizer_path.exists():
+        print(f"Building tokenizer for '{lang}'...")
         tokenizer: Tokenizer = Tokenizer(WordLevel(unk_token='[UNK]'))
         tokenizer.pre_tokenizer = Whitespace()
 
@@ -48,18 +50,20 @@ def get_or_build_tokenizer(config, ds, lang):
         )
         tokenizer_path.parent.mkdir(parents=True, exist_ok=True)
         tokenizer.save(str(tokenizer_path))
+        print(f"Saved tokenizer to {tokenizer_path} (vocab size: {tokenizer.get_vocab_size()})")
     else:
+        print(f"Loading tokenizer from {tokenizer_path}")
         tokenizer = Tokenizer.from_file(str(tokenizer_path))
 
     return tokenizer
 
 
 def get_ds(config):
-    ds_raw = load_dataset(
-        'opus_books',
-        f"{config['lang_src']}-{config['lang_tgt']}",
-        split='train',
-    )
+    lang_pair = f"{config['lang_src']}-{config['lang_tgt']}"
+    try:
+        ds_raw = load_dataset('Helsinki-NLP/opus_books', lang_pair, split='train')
+    except Exception:
+        ds_raw = load_dataset('opus_books', lang_pair, split='train')
 
     # build tokenizers
     tokenizer_src = get_or_build_tokenizer(config, ds_raw, config['lang_src'])
@@ -202,7 +206,9 @@ def run_validation(
 
 def train_model(config):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print("device: ", device)
+    print("Device: ", device)
+    if device.type == 'cuda':
+        print(f"Using GPU: {torch.cuda.get_device_name(0)}")
 
     Path(config['model_folder']).mkdir(parents=True, exist_ok=True)
 
@@ -218,6 +224,10 @@ def train_model(config):
     writer = SummaryWriter(config['experiment_name'])
 
     optimizer = torch.optim.Adam(model.parameters(), lr=config['lr'], eps=1e-9)
+
+    # Mixed precision scaler for faster GPU training
+    use_amp = (device.type == 'cuda')
+    scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
 
     initial_epoch = 0
     global_step = 0
@@ -258,24 +268,25 @@ def train_model(config):
             encoder_mask = batch['encoder_mask'].to(device)    # (B, 1, 1, seq_len)
             decoder_mask = batch['decoder_mask'].to(device)    # (B, 1, seq_len, seq_len)
 
-            # run the tensors through the model
-            encoder_output = model.encode(encoder_input, encoder_mask)  # (B, seq_len, d_model)
-            decoder_output = model.decode(
-                encoder_output,
-                encoder_mask,
-                decoder_input,
-                decoder_mask
-            )  # (B, seq_len, d_model)
+            with torch.amp.autocast('cuda', enabled=use_amp, dtype=torch.float16):
+                # run the tensors through the model
+                encoder_output = model.encode(encoder_input, encoder_mask)  # (B, seq_len, d_model)
+                decoder_output = model.decode(
+                    encoder_output,
+                    encoder_mask,
+                    decoder_input,
+                    decoder_mask
+                )  # (B, seq_len, d_model)
 
-            proj_output = model.project(decoder_output)  # (B, seq_len, vocab_size_tgt)
+                proj_output = model.project(decoder_output)  # (B, seq_len, vocab_size_tgt)
 
-            label = batch['label'].to(device)  # (B, seq_len)
+                label = batch['label'].to(device)  # (B, seq_len)
 
-            # (B, seq_len, vocab_size_tgt) -> (B * seq_len, vocab_size_tgt)
-            loss = loss_fn(
-                proj_output.view(-1, tokenizer_tgt.get_vocab_size()),
-                label.view(-1)
-            )
+                # (B, seq_len, vocab_size_tgt) -> (B * seq_len, vocab_size_tgt)
+                loss = loss_fn(
+                    proj_output.view(-1, tokenizer_tgt.get_vocab_size()),
+                    label.view(-1)
+                )
 
             batch_iterator.set_postfix({"loss": f"{loss.item():6.3f}"})
 
@@ -283,11 +294,10 @@ def train_model(config):
             writer.add_scalar('train loss', loss.item(), global_step)
             writer.flush()
 
-            # backpropagate
-            loss.backward()
-
-            # update the weights
-            optimizer.step()
+            # backpropagate with scaler
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
             global_step += 1
 
@@ -315,9 +325,23 @@ def train_model(config):
             },
             model_filename,
         )
+        print(f"\nSaved checkpoint to: {model_filename}")
 
 
 if __name__ == "__main__":
     warnings.filterwarnings("ignore")
+    parser = argparse.ArgumentParser(description="Train Transformer model")
+    parser.add_argument("--epochs", type=int, default=None, help="Number of epochs to train")
+    parser.add_argument("--batch-size", type=int, default=None, help="Batch size")
+    parser.add_argument("--preload", type=str, default=None, help="Preload checkpoint ('latest' or epoch number)")
+    args = parser.parse_args()
+
     config = get_config()
+    if args.epochs is not None:
+        config['num_epochs'] = args.epochs
+    if args.batch_size is not None:
+        config['batch_size'] = args.batch_size
+    if args.preload is not None:
+        config['preload'] = args.preload
+
     train_model(config)
