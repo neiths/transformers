@@ -10,4 +10,4 @@ anyhow = "1.0.104"
 
 [features]
 default = []
-cuda = ["candle-core/cude", "candle-nn/cude"]
+cuda = ["candle-core/cuda", "candle-nn/cuda"]
